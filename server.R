@@ -1,95 +1,49 @@
-#
-# This is the server logic of a Shiny web application. You can run the 
-# application by clicking 'Run App' above.
-#
-# Find out more about building applications with Shiny here:
-# 
-#    http://shiny.rstudio.com/
-#
 
-# Load libraries
-library(shiny)
-library(tree)
-library(RColorBrewer)
-
-# Create the server function
-server <- function(input, output) {
+#server
+server <- function(input,output,session){
   
-  # Load the iris data set
-  data(iris)
-  
-  # Set seed to make randomness reproducable
-  set.seed(42)
-  
-  # Randomly sample 100 of 150 row indexes
-  indexes <- sample(
-    x = 1:150, 
-    size = 100)
-  
-  # Create training set from indexes
-  # NOTE: Need to use the superassignment operator here
-  train <<- iris[indexes, ]
-  
-  # Create test set from remaining indexes
-  test <- iris[-indexes, ]
-  
-  # Train tree model
-  treeModel <- tree(
-    formula = Species ~ .,
-    data = train)
-  
-  # Create a color palette
-  palette <- brewer.pal(3, "Set2")
-  
-  # Create render prediction function
-  output$text = renderText({
+  output$results_lm <- renderPrint({
+    date <- ymd(input$date)
+    ds1 <- total %>% filter(Travel.Date == date) %>% select(-Travel.Date, -bookings)
     
-    # Create predictors
-    predictors <- data.frame(
-      Petal.Length = input$petal.length,
-      Petal.Width = input$petal.width,
-      Sepal.Length = 0,
-      Sepal.Width = 0)
+    lm_prediction <- predict(lm_total, data.frame(ds1))
+    lm_prediction <- round(lm_prediction*10)
     
-    # Make prediction
-    prediction = predict(
-      object = treeModel,
-      newdata = predictors,
-      type = "class")
-    
-    # Create prediction text
-    paste(
-      "The predicted species is ",
-      as.character(prediction))
+    cat(paste('$',lm_prediction))
   })
   
-  # Create render plot function
-  output$plot = renderPlot({
+  output$results_rf <- renderPrint({
+    date <- ymd(input$date)
+    ds1 <- total %>% filter(Travel.Date == date) %>% select(-Travel.Date, -bookings)
     
-    # Create a scatterplot colored by species
-    plot(
-      x = iris$Petal.Length, 
-      y = iris$Petal.Width,
-      pch = 19,
-      col = palette[as.numeric(iris$Species)],
-      main = "Iris Petal Length vs. Width",
-      xlab = "Petal Length (cm)",
-      ylab = "Petal Width (cm)")
     
-    # Plot the desicion boundaries
-    partition.tree(
-      treeModel,
-      label = "Species",
-      add = TRUE)
+    rf_prediction <- predictions(predict(rf, data.frame(ds1)))
+    rf_prediction <- round(rf_prediction*10)
     
-    # Draw predictor on plot
-    points(
-      x = input$petal.length,
-      y = input$petal.width,
-      col = "red",
-      pch = 4,
-      cex = 2,
-      lwd = 2)
+    
+    cat(paste('$',rf_prediction))
   })
+  
+  # Fill in the spot we created for a plot
+  output$icg.plot1 <- renderPlot({
+    date <- ymd(input$date)
+    ds1 <- total %>% filter(Travel.Date == date) %>% select(-Travel.Date, -bookings)
+    
+    df <- data.frame(Factors = c('Seasonal','Weather','External Source') , increase.rate  = c(
+      ((predict(lm_seasonal,ds1) - mean(total$bookings, na.rm =T) )/mean(total$bookings, na.rm =T))*100,
+      ((predict(lm_weather,ds1) - mean(total$bookings, na.rm =T) )/mean(total$bookings, na.rm =T))*100,
+      as.numeric(((airport[month(date),'bookings'] - mean(total$bookings, na.rm =T) )/mean(total$bookings, na.rm =T))*100)
+    ))
+      
+    df %>% ggplot(aes(x=Factors, y=increase.rate))+
+      geom_bar(stat="identity",aes(fill=Factors), width=.5) + coord_flip()+ ylim(-200,200) +
+      xlab("Factors") + ylab("Passenger Increase Rate(%)") + scale_fill_discrete(name = "Factors")
+    
+  })
+  
 }
-
+ 
+shinyApp(ui, server) 
+  
+  
+  
